@@ -14,7 +14,8 @@ impl PrivateKey {
     DisplayPrivateKey::new(self)
   }
 
-  pub(crate) fn generate() -> Self {
+  #[must_use]
+  pub fn generate() -> Self {
     let inner = ed25519_dalek::SigningKey::generate(&mut rand::rng());
     let verifying_key = inner.verifying_key();
     assert!(!verifying_key.is_weak());
@@ -25,14 +26,15 @@ impl PrivateKey {
     &self.0
   }
 
-  pub(crate) fn load(path: &Utf8Path) -> Result<Self> {
+  #[cfg(feature = "fs")]
+  pub(crate) fn load(path: &Utf8Path) -> Result<Self, KeyError> {
     let private_key = filesystem::read_to_string_opt(path)?
-      .ok_or_else(|| error::PrivateKeyNotFound { path }.build())?;
+      .ok_or_else(|| key_error::PrivateKeyNotFound { path }.build())?;
 
     let private_key = private_key
       .trim()
       .parse::<Self>()
-      .context(error::PrivateKeyLoad { path })?;
+      .context(key_error::PrivateKeyLoad { path })?;
 
     Ok(private_key)
   }

@@ -1,4 +1,7 @@
-use {super::*, clap::CommandFactory};
+use super::*;
+
+#[cfg(feature = "fs")]
+use clap::CommandFactory;
 
 pub use self::{
   command::Command, content_type::ContentType, endpoint::Endpoint, hex::Hex, lint_group::LintGroup,
@@ -41,6 +44,7 @@ pub struct Reference {
 }
 
 impl Reference {
+  #[cfg(feature = "fs")]
   pub fn new() -> Self {
     fn descriptions<T: Json>() -> BTreeMap<String, String> {
       T::schema()
@@ -140,8 +144,10 @@ impl Reference {
 
     let metadata = yaml::Example::new(&yaml, "Metadata");
 
+    #[cfg_attr(not(feature = "server"), allow(unused_mut))]
     let mut routes = BTreeMap::<String, Route>::new();
 
+    #[cfg(feature = "server")]
     for route in subcommand::serve::route::Route::all(&mut deco) {
       routes
         .entry(route.path.into())

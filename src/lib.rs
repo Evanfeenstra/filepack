@@ -17,13 +17,19 @@
 //! integration tests. As such, it should not be used by outside consumers, and
 //! provides no semantic versioning guarantees.
 
+// Building without the default `client`, `fs` and `server` features leaves
+// code that only they use unreachable.
+#![cfg_attr(
+  not(all(feature = "client", feature = "fs", feature = "server")),
+  allow(dead_code, unreachable_pub, unused_imports)
+)]
+
 use {
   self::{
     application::Application,
     archive::Archive,
     archive_builder::ArchiveBuilder,
     archive_error::ArchiveError,
-    arguments::Arguments,
     array_decoder::ArrayDecoder,
     array_encoder::ArrayEncoder,
     audio::Audio,
@@ -32,7 +38,6 @@ use {
     audio_format::AudioFormat,
     audio_metadata::AudioMetadata,
     audio_position_error::AudioPositionError,
-    authenticated::Authenticated,
     authorization_error::AuthorizationError,
     bit_reader::BitReader,
     bytes_error::BytesError,
@@ -40,7 +45,6 @@ use {
     checked_url::CheckedUrl,
     chroma_subsampling::ChromaSubsampling,
     claims::Claims,
-    client::Client,
     color_info::ColorInfo,
     color_type::ColorType,
     component::Component,
@@ -49,7 +53,6 @@ use {
     compression::Compression,
     content::Content,
     context::Context,
-    database_metadata::DatabaseMetadata,
     date::Date,
     deco_request::DecoRequest,
     deco_response::DecoResponse,
@@ -81,11 +84,7 @@ use {
     flac_decoder::FlacDecoder,
     float_ext::FloatExt,
     format::Format,
-    functions::{
-      check_case, check_metadata, current_dir, decode_path, default, format_size, now,
-      parse_number, transfer_tempfile, verify_subpackage,
-    },
-    hashing_writer::HashingWriter,
+    functions::{check_case, current_dir, decode_path, default, format_size, parse_number},
     head::Head,
     hex::Hex,
     hex_error::HexError,
@@ -105,11 +104,9 @@ use {
     key_identifier_error::KeyIdentifierError,
     key_name::KeyName,
     key_type::KeyType,
-    keychain::Keychain,
     language_error::LanguageError,
     lint_error::LintError,
     lint_selector::LintSelector,
-    linter::Linter,
     m4a_decoder::M4aDecoder,
     m4a_error::M4aError,
     magic::Magic,
@@ -129,13 +126,10 @@ use {
     mp4_error::Mp4Error,
     number_error::NumberError,
     open_graph_image::OpenGraphImage,
-    options::Options,
     or::Or,
     order::Order,
     ordinal::Ordinal,
     orientation::Orientation,
-    output_format::OutputFormat,
-    output_format_json::OutputFormatJson,
     owo_colorize_ext::OwoColorizeExt,
     package_identifier_error::PackageIdentifierError,
     package_metadata::PackageMetadata,
@@ -145,20 +139,15 @@ use {
     path_extractor::PathExtractor,
     percent_encode::PercentEncode,
     private_key_error::PrivateKeyError,
-    progress_bar::ProgressBar,
     public_key_error::PublicKeyError,
     relative_path::RelativePath,
-    reqwest_response_ext::ReqwestResponseExt,
     resolved::Resolved,
-    resource::Resource,
     resource_type::ResourceType,
     revision::Revision,
     rotation::Rotation,
-    server::Server,
     server_error::ServerError,
     server_url::ServerUrl,
     server_url_error::ServerUrlError,
-    shell::Shell,
     shortcut::Shortcut,
     sign_options::SignOptions,
     signature::Signature,
@@ -168,10 +157,7 @@ use {
     sort_key::SortKey,
     sorted_set::SortedSet,
     statement::Statement,
-    static_asset::StaticAsset,
     style::Style,
-    subcommand::Subcommand,
-    subcommand::serve::route::Route,
     templates::{ErrorHtml, PageHtml},
     text::Text,
     text_error::TextError,
@@ -182,7 +168,6 @@ use {
     track::Track,
     track_codec::TrackCodec,
     track_info::TrackInfo,
-    type_name::TypeName,
     unknown_error::UnknownError,
     url_error::UrlError,
     utf8_path_ext::Utf8PathExt,
@@ -191,7 +176,6 @@ use {
     video_error::VideoError,
     video_format::VideoFormat,
     video_metadata::VideoMetadata,
-    walk::Walk,
     webm_decoder::WebmDecoder,
     xmp_error::XmpError,
   },
@@ -204,8 +188,6 @@ use {
   blake3::Hasher,
   boilerplate::{Boilerplate, Trusted},
   camino::{Utf8Component, Utf8Path, Utf8PathBuf},
-  clap::{ArgGroup, CommandFactory, Parser, ValueEnum, ValueHint},
-  clap_complete::{ArgValueCandidates, CompleteEnv, CompletionCandidate},
   claxon::FlacReader,
   filepack_derive::{Decode, DecodeFromStr, Encode, EncodeDisplay, Json, Magic, route},
   futures_util::StreamExt,
@@ -253,16 +235,50 @@ use {
     Display, EnumDiscriminants, EnumIter, EnumString, FromRepr, IntoDiscriminant, IntoEnumIterator,
     IntoStaticStr, VariantArray,
   },
-  tempfile::{NamedTempFile, TempPath},
   tokio::io::{AsyncReadExt, AsyncWriteExt},
   tokio_util::io::ReaderStream,
   unicase::UniCase,
   unindent::unindent,
   url::Url,
   usized::IntoU64,
-  walkdir::WalkDir,
   zune_jpeg::{JpegDecoder, SampleRatios, zune_core::colorspace::ColorSpace},
 };
+
+#[cfg(feature = "fs")]
+use {
+  clap::{ArgGroup, CommandFactory, Parser, ValueEnum, ValueHint},
+  clap_complete::{ArgValueCandidates, CompleteEnv, CompletionCandidate},
+  tempfile::{NamedTempFile, TempPath},
+  walkdir::WalkDir,
+};
+
+#[cfg(feature = "fs")]
+use self::{
+  arguments::Arguments, hashing_writer::HashingWriter, keychain::Keychain, linter::Linter,
+  options::Options, output_format::OutputFormat, output_format_json::OutputFormatJson,
+  progress_bar::ProgressBar, shell::Shell, subcommand::Subcommand, walk::Walk,
+};
+
+#[cfg(feature = "fs")]
+use self::functions::{check_metadata, transfer_tempfile, verify_subpackage};
+
+#[cfg(feature = "fs")]
+pub use self::{loader::Loader, state::State};
+
+#[cfg(feature = "redb")]
+use self::{database_metadata::DatabaseMetadata, type_name::TypeName};
+
+#[cfg(feature = "server")]
+use self::{
+  authenticated::Authenticated, resource::Resource, server::Server, static_asset::StaticAsset,
+  subcommand::serve::route::Route,
+};
+
+#[cfg(feature = "client")]
+use self::{client::Client, reqwest_response_ext::ReqwestResponseExt};
+
+#[cfg(any(feature = "client", feature = "server"))]
+pub use self::functions::install_default_crypto_provider;
 
 #[cfg(test)]
 use {
@@ -279,6 +295,7 @@ use {
 
 pub use self::{
   bytes::Bytes,
+  content_hasher::ContentHasher,
   count::Count,
   decode::Decode,
   decode_options::DecodeOptions,
@@ -291,16 +308,18 @@ pub use self::{
   entry::Entry,
   fingerprint::Fingerprint,
   flac_builder::FlacBuilder,
-  functions::{gradient, gradient_alpha, install_default_crypto_provider},
+  functions::{gradient, gradient_alpha, now},
   hash::Hash,
+  key_error::KeyError,
   language::Language,
   lint_error::Lint,
   lint_group::LintGroup,
-  loader::Loader,
   magic_type::MagicType,
   manifest::Manifest,
+  manifest_error::ManifestError,
   media::MediaType,
   metadata::Metadata,
+  metadata_error::MetadataError,
   mp3_builder::Mp3Builder,
   mp4_builder::Mp4Builder,
   non_empty_ordered_set::NonEmptyOrderedSet,
@@ -312,7 +331,7 @@ pub use self::{
   reference::Reference,
   revision_object::RevisionObject,
   server_state::ServerState,
-  state::State,
+  statement_error::StatementError,
   tag::Tag,
   totals::Totals,
   unstable_feature::UnstableFeature,
@@ -335,6 +354,7 @@ mod application;
 mod archive;
 mod archive_builder;
 mod archive_error;
+#[cfg(feature = "fs")]
 mod arguments;
 mod array_decoder;
 mod array_encoder;
@@ -344,6 +364,7 @@ mod audio_error;
 mod audio_format;
 mod audio_metadata;
 mod audio_position_error;
+#[cfg(feature = "server")]
 mod authenticated;
 mod authorization_error;
 mod bit_reader;
@@ -353,6 +374,7 @@ mod cause;
 mod checked_url;
 mod chroma_subsampling;
 mod claims;
+#[cfg(feature = "client")]
 mod client;
 mod color_info;
 mod color_type;
@@ -361,8 +383,10 @@ mod component_buf;
 mod component_error;
 mod compression;
 mod content;
+mod content_hasher;
 mod context;
 mod count;
+#[cfg(feature = "redb")]
 mod database_metadata;
 mod date;
 pub mod deco;
@@ -401,6 +425,8 @@ mod error;
 mod exif_decoder;
 mod exif_error;
 mod file;
+// Lets the derive macros in `filepack-derive` name this crate as `::filepack`.
+extern crate self as filepack;
 mod filesystem;
 mod filesystem_error;
 mod fingerprint;
@@ -410,6 +436,7 @@ mod float_ext;
 mod format;
 mod functions;
 mod hash;
+#[cfg(feature = "fs")]
 mod hashing_writer;
 mod head;
 pub mod hex;
@@ -426,17 +453,21 @@ mod iso8601_duration;
 mod item;
 mod items;
 pub mod json;
+mod key_error;
 mod key_identifier;
 mod key_identifier_error;
 mod key_name;
 mod key_type;
+#[cfg(feature = "fs")]
 mod keychain;
 mod language;
 mod language_error;
 mod lint_error;
 mod lint_group;
 mod lint_selector;
+#[cfg(feature = "fs")]
 mod linter;
+#[cfg(feature = "fs")]
 mod loader;
 mod m4a_decoder;
 mod m4a_error;
@@ -444,6 +475,7 @@ mod magic;
 mod magic_type;
 mod malformed_error;
 mod manifest;
+mod manifest_error;
 mod map_decoder;
 mod map_encoder;
 mod media;
@@ -451,6 +483,7 @@ mod media_item;
 mod media_item_resource;
 mod message;
 mod metadata;
+mod metadata_error;
 mod mode;
 mod mount;
 mod mount_error;
@@ -464,12 +497,15 @@ mod mp4_error;
 mod non_empty_ordered_set;
 mod number_error;
 mod open_graph_image;
+#[cfg(feature = "fs")]
 mod options;
 mod or;
 mod order;
 mod ordinal;
 mod orientation;
+#[cfg(feature = "fs")]
 mod output_format;
+#[cfg(feature = "fs")]
 mod output_format_json;
 mod owo_colorize_ext;
 mod package_identifier;
@@ -484,24 +520,29 @@ mod percent_encode;
 mod png_builder;
 mod private_key;
 mod private_key_error;
+#[cfg(feature = "fs")]
 mod progress_bar;
 mod public_key;
 mod public_key_error;
 mod re;
 pub mod reference;
 mod relative_path;
+#[cfg(feature = "client")]
 mod reqwest_response_ext;
 mod resolved;
+#[cfg(feature = "server")]
 mod resource;
 mod resource_type;
 mod revision;
 mod revision_object;
 mod rotation;
+#[cfg(feature = "server")]
 mod server;
 mod server_error;
 mod server_state;
 mod server_url;
 mod server_url_error;
+#[cfg(feature = "fs")]
 mod shell;
 mod shortcut;
 mod sign_options;
@@ -511,10 +552,14 @@ mod signature_error;
 mod sort;
 mod sort_key;
 mod sorted_set;
+#[cfg(feature = "fs")]
 mod state;
 mod statement;
+mod statement_error;
+#[cfg(feature = "server")]
 mod static_asset;
 mod style;
+#[cfg(feature = "fs")]
 mod subcommand;
 mod tag;
 pub mod templates;
@@ -528,6 +573,7 @@ mod totals_error;
 mod track;
 mod track_codec;
 mod track_info;
+#[cfg(feature = "redb")]
 mod type_name;
 mod unknown_error;
 mod unstable_feature;
@@ -538,6 +584,7 @@ mod video;
 mod video_error;
 mod video_format;
 mod video_metadata;
+#[cfg(feature = "fs")]
 mod walk;
 mod webm_decoder;
 mod xmp;
@@ -547,11 +594,27 @@ pub mod yaml;
 #[cfg(test)]
 mod derive;
 #[cfg(test)]
+mod derive_hygiene;
+#[cfg(test)]
 mod jpeg_builder;
 #[cfg(test)]
 mod test;
 #[cfg(test)]
 mod webm_builder;
+
+#[doc(hidden)]
+pub(crate) mod __private {
+  pub(crate) use {
+    crate::{
+      Decode, DecodeResult, Decoder, Encode, Encoder, Magic, MagicType, MalformedError,
+      UnknownError, Validate, deco, json, malformed_error,
+    },
+    snafu::ensure,
+  };
+
+  #[cfg(feature = "server")]
+  pub(crate) use crate::{Describe, reference, subcommand::serve::route::Route};
+}
 
 const API_VERSION: u64 = 0;
 const API_VERSION_HEADER: HeaderName = HeaderName::from_static("filepack-api-version");
@@ -569,6 +632,7 @@ type ServerResult<T = ()> = Result<T, ServerError>;
 type Attestation = Signature<Statement>;
 type Token = Signature<Claims>;
 
+#[cfg(feature = "fs")]
 fn initialize_tracing() -> Result<(), Box<dyn std::error::Error>> {
   use {
     tracing::level_filters::LevelFilter,
@@ -613,6 +677,7 @@ fn initialize_tracing() -> Result<(), Box<dyn std::error::Error>> {
   Ok(())
 }
 
+#[cfg(feature = "fs")]
 pub fn run() -> ExitCode {
   CompleteEnv::with_factory(Arguments::command)
     .var("FILEPACK_COMPLETE")

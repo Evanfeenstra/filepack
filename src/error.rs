@@ -3,12 +3,6 @@ use super::*;
 #[derive(Debug, Snafu)]
 #[snafu(context(suffix(false)), visibility(pub(crate)))]
 pub enum Error {
-  #[snafu(display("artwork `{path}` is {dimensions} but must be square"))]
-  ArtworkAspectRatio {
-    backtrace: Option<Backtrace>,
-    dimensions: Dimensions,
-    path: DisplayPath,
-  },
   #[snafu(display("file hash {actual} not equal to expected {expected}"))]
   Assert {
     actual: Hash,
@@ -43,26 +37,24 @@ pub enum Error {
     backtrace: Option<Backtrace>,
     source: io::Error,
   },
+  #[cfg(feature = "client")]
   #[snafu(display("failed to build HTTP client"))]
   ClientBuild {
     backtrace: Option<Backtrace>,
     source: reqwest::Error,
-  },
-  #[snafu(display("colophon `{colophon}` must end in `.md`"))]
-  ColophonExtension {
-    backtrace: Option<Backtrace>,
-    colophon: RelativePath,
   },
   #[snafu(display("failed to get current directory"))]
   CurrentDir {
     backtrace: Option<Backtrace>,
     source: io::Error,
   },
+  #[cfg(feature = "redb")]
   #[snafu(display("failed to commit to database"))]
   DatabaseCommit {
     backtrace: Option<Backtrace>,
     source: redb::CommitError,
   },
+  #[cfg(feature = "redb")]
   #[snafu(display("error opening database at `{path}`"))]
   DatabaseOpen {
     backtrace: Option<Backtrace>,
@@ -77,32 +69,23 @@ pub enum Error {
   },
   #[snafu(display("database schema version missing"))]
   DatabaseSchemaVersionMissing { backtrace: Option<Backtrace> },
+  #[cfg(feature = "redb")]
   #[snafu(display("database storage error"))]
   DatabaseStorage {
     backtrace: Option<Backtrace>,
     source: redb::StorageError,
   },
+  #[cfg(feature = "redb")]
   #[snafu(display("failed to open database table"))]
   DatabaseTableOpen {
     backtrace: Option<Backtrace>,
     source: redb::TableError,
   },
+  #[cfg(feature = "redb")]
   #[snafu(display("database transaction error"))]
   DatabaseTransaction {
     backtrace: Option<Backtrace>,
     source: redb::TransactionError,
-  },
-  #[snafu(display("failed to decode manifest at `{path}`"))]
-  DecodeManifest {
-    backtrace: Option<Backtrace>,
-    path: DisplayPath,
-    source: DecodeError,
-  },
-  #[snafu(display("failed to decode metadata at `{path}`"))]
-  DecodeMetadataDeco {
-    backtrace: Option<Backtrace>,
-    path: DisplayPath,
-    source: DecodeError,
   },
   #[snafu(display("failed to decode response from `{url}`"))]
   DecodeResponse {
@@ -115,12 +98,6 @@ pub enum Error {
     backtrace: Option<Backtrace>,
     source: DecodeError,
     url: Url,
-  },
-  #[snafu(display("failed to deserialize manifest at `{path}`"))]
-  DeserializeManifest {
-    backtrace: Option<Backtrace>,
-    path: DisplayPath,
-    source: serde_json::Error,
   },
   #[snafu(display("failed to deserialize metadata at `{path}`"))]
   DeserializeMetadata {
@@ -152,11 +129,6 @@ pub enum Error {
     backtrace: Option<Backtrace>,
     expected: u64,
   },
-  #[snafu(display("duplicate item in metadata: `{path}`"))]
-  DuplicateItem {
-    backtrace: Option<Backtrace>,
-    path: RelativePath,
-  },
   #[snafu(display(
     "duplicate key: {}",
     if first == second {
@@ -170,34 +142,10 @@ pub enum Error {
     first: KeyIdentifier,
     second: KeyIdentifier,
   },
-  #[snafu(display(
-    "embedded file in manifest `{path}` should have hash `{expected}` but has hash `{actual}`"
-  ))]
-  EmbeddedFileHashMismatch {
-    actual: Hash,
-    backtrace: Option<Backtrace>,
-    expected: Hash,
-    path: DisplayPath,
-  },
-  #[snafu(display(
-    "embedded file `{hash}` in manifest `{path}` should have size {expected} but has size {actual}"
-  ))]
-  EmbeddedFileSizeMismatch {
-    actual: u64,
-    backtrace: Option<Backtrace>,
-    expected: u64,
-    hash: Hash,
-    path: DisplayPath,
-  },
   #[snafu(display("{count} mismatched file{}", if *count == 1 { "" } else { "s" }))]
   EntryMismatch {
     backtrace: Option<Backtrace>,
     count: usize,
-  },
-  #[snafu(display("found {} not referenced in metadata", Count::new(paths.len(), "extra file")))]
-  ExtraFiles {
-    backtrace: Option<Backtrace>,
-    paths: Vec<RelativePath>,
   },
   #[snafu(display("extraneous directory not in manifest: `{path}`"))]
   ExtraneousDirectory {
@@ -218,12 +166,6 @@ pub enum Error {
   FileNotFound {
     backtrace: Option<Backtrace>,
     hash: Hash,
-  },
-  #[snafu(display("expected `{expected}` but found case mismatch `{actual}`"))]
-  FilenameCase {
-    actual: String,
-    backtrace: Option<Backtrace>,
-    expected: &'static str,
   },
   #[snafu(transparent)]
   Filesystem {
@@ -292,6 +234,11 @@ pub enum Error {
     backtrace: Option<Backtrace>,
     message: String,
   },
+  #[snafu(transparent)]
+  Key {
+    backtrace: Option<Backtrace>,
+    source: KeyError,
+  },
   #[snafu(display(
     "public key `{}` doesn't match private key `{}`",
     key.public_key_filename(),
@@ -338,6 +285,11 @@ pub enum Error {
     backtrace: Option<Backtrace>,
     source: io::Error,
   },
+  #[snafu(transparent)]
+  Manifest {
+    backtrace: Option<Backtrace>,
+    source: ManifestError,
+  },
   #[snafu(display("manifest `{path}` already exists, use `--force` to overwrite it"))]
   ManifestAlreadyExists {
     backtrace: Option<Backtrace>,
@@ -348,16 +300,10 @@ pub enum Error {
     backtrace: Option<Backtrace>,
     path: DisplayPath,
   },
-  #[snafu(display("manifest `{path}` not found"))]
-  ManifestNotFound {
+  #[snafu(transparent)]
+  Metadata {
     backtrace: Option<Backtrace>,
-    path: DisplayPath,
-  },
-  #[snafu(display("manifest `{path}` totals error"))]
-  ManifestTotals {
-    backtrace: Option<Backtrace>,
-    path: DisplayPath,
-    source: TotalsError,
+    source: MetadataError,
   },
   #[snafu(display("metadata `{path}` already exists, use `--force` to overwrite it"))]
   MetadataAlreadyExists {
@@ -376,11 +322,6 @@ pub enum Error {
   },
   #[snafu(display("file missing: `{path}`"))]
   MissingFile {
-    backtrace: Option<Backtrace>,
-    path: RelativePath,
-  },
-  #[snafu(display("file referenced in metadata missing: `{path}`"))]
-  MissingMetadataFile {
     backtrace: Option<Backtrace>,
     path: RelativePath,
   },
@@ -415,17 +356,6 @@ pub enum Error {
     backtrace: Option<Backtrace>,
     path: PathBuf,
   },
-  #[snafu(display("invalid private key `{path}`"))]
-  PrivateKeyLoad {
-    backtrace: Option<Backtrace>,
-    path: DisplayPath,
-    source: PrivateKeyError,
-  },
-  #[snafu(display("private key not found: `{path}`"))]
-  PrivateKeyNotFound {
-    backtrace: Option<Backtrace>,
-    path: DisplayPath,
-  },
   #[snafu(display("private key `{path}` has insecure permissions {mode}"))]
   PrivateKeyPermissions {
     backtrace: Option<Backtrace>,
@@ -436,22 +366,6 @@ pub enum Error {
   PublicKeyAlreadyExists {
     backtrace: Option<Backtrace>,
     path: PathBuf,
-  },
-  #[snafu(display("invalid public key: `{path}`"))]
-  PublicKeyLoad {
-    backtrace: Option<Backtrace>,
-    path: DisplayPath,
-    source: HexError,
-  },
-  #[snafu(display("public key not found: `{path}`"))]
-  PublicKeyNotFound {
-    backtrace: Option<Backtrace>,
-    path: DisplayPath,
-  },
-  #[snafu(display("readme `{readme}` must end in `.md`"))]
-  ReadmeExtension {
-    backtrace: Option<Backtrace>,
-    readme: RelativePath,
   },
   #[snafu(display("failed to write listening port to `{address}`"))]
   ReadyAddress {
@@ -464,6 +378,7 @@ pub enum Error {
     backtrace: Option<Backtrace>,
     domain: Domain,
   },
+  #[cfg(feature = "client")]
   #[snafu(display("request failed"))]
   Request {
     backtrace: Option<Backtrace>,
@@ -474,12 +389,14 @@ pub enum Error {
     backtrace: Option<Backtrace>,
     path: RelativePath,
   },
+  #[cfg(feature = "client")]
   #[snafu(display("failed to read body from response from {url}"))]
   ResponseBody {
     backtrace: Option<Backtrace>,
     source: reqwest::Error,
     url: Url,
   },
+  #[cfg(feature = "client")]
   #[snafu(display("response from {url} failed with status {status}: {body}"))]
   ResponseStatus {
     backtrace: Option<Backtrace>,
@@ -497,6 +414,7 @@ pub enum Error {
     number: u64,
     server: Revision,
   },
+  #[cfg(any(feature = "client", feature = "server"))]
   #[snafu(display("failed to install rustls ring crypto provider"))]
   RustlsProvider { backtrace: Option<Backtrace> },
   #[snafu(display("failed to serialize JSON to stdout"))]
@@ -513,14 +431,6 @@ pub enum Error {
   ServerRuntime {
     backtrace: Option<Backtrace>,
     source: io::Error,
-  },
-  #[snafu(display(
-    "signature fingerprint `{signature}` does not match package fingerprint `{package}`"
-  ))]
-  SignatureFingerprintMismatch {
-    backtrace: Option<Backtrace>,
-    package: Fingerprint,
-    signature: Fingerprint,
   },
   #[snafu(transparent)]
   SignatureInvalid {
@@ -551,6 +461,11 @@ pub enum Error {
     backtrace: Option<Backtrace>,
     source: io::Error,
   },
+  #[snafu(transparent)]
+  Statement {
+    backtrace: Option<Backtrace>,
+    source: StatementError,
+  },
   #[snafu(display(
     "subpackage `{path}` fingerprint `{actual}` does not match `{path}/{}` fingerprint `{expected}`",
     Manifest::FILENAME,
@@ -572,18 +487,6 @@ pub enum Error {
     backtrace: Option<Backtrace>,
     path: DisplayPath,
   },
-  #[snafu(display("thumbnail for `{image}` conflicts with `{path}`"))]
-  ThumbnailAlreadyExists {
-    backtrace: Option<Backtrace>,
-    image: RelativePath,
-    path: DisplayPath,
-  },
-  #[snafu(display("thumbnail for `{second}` conflicts with thumbnail for `{first}`"))]
-  ThumbnailCollision {
-    backtrace: Option<Backtrace>,
-    first: RelativePath,
-    second: RelativePath,
-  },
   #[snafu(display("failed to generate thumbnail for image `{path}`"))]
   ThumbnailGeneration {
     backtrace: Option<Backtrace>,
@@ -599,18 +502,6 @@ pub enum Error {
   TokenOverHttp { backtrace: Option<Backtrace> },
   #[snafu(display("total file size overflowed 64-bit integer"))]
   TotalFileSizeOverflow { backtrace: Option<Backtrace> },
-  #[snafu(display("failed to unarchive manifest"))]
-  UnarchiveManifest {
-    backtrace: Option<Backtrace>,
-    path: DisplayPath,
-    source: ArchiveError,
-  },
-  #[snafu(display("manifest `{path}` unknown entry `{name}` conflicts with known entry"))]
-  UnknownEntryConflict {
-    backtrace: Option<Backtrace>,
-    name: ComponentBuf,
-    path: DisplayPath,
-  },
   #[snafu(display(
     "manifest contains {}",
     Count::new(*count, "unrecognized signature"),
@@ -618,12 +509,6 @@ pub enum Error {
   UnknownSignatures {
     backtrace: Option<Backtrace>,
     count: usize,
-  },
-  #[snafu(display("manifest `{path}` contains unreferenced embedded files: {hashes}"))]
-  UnreferencedEmbeddedFiles {
-    backtrace: Option<Backtrace>,
-    hashes: Ticked<Hash>,
-    path: DisplayPath,
   },
   #[snafu(display("unstable feature `{feature}` requires `--unstable`"))]
   UnstableFeature {
@@ -636,6 +521,7 @@ pub enum Error {
     path: DisplayPath,
     source: VideoError,
   },
+  #[cfg(feature = "fs")]
   #[snafu(display("error walking directory"))]
   WalkDir {
     backtrace: Option<Backtrace>,
@@ -646,39 +532,44 @@ pub enum Error {
 impl Error {
   pub(crate) fn causes(&self) -> Vec<Cause> {
     match self {
-      Self::ExtraFiles {
+      Self::Metadata {
         backtrace: _,
-        paths,
+        source: MetadataError::ExtraFiles { paths },
       } => paths.iter().map(Cause::Path).collect(),
       _ => self.iter_chain().skip(1).map(Cause::Error).collect(),
     }
   }
 }
 
+#[cfg(feature = "redb")]
 impl From<redb::CommitError> for Error {
   fn from(source: redb::CommitError) -> Self {
     DatabaseCommit {}.into_error(source)
   }
 }
 
+#[cfg(feature = "redb")]
 impl From<redb::StorageError> for Error {
   fn from(source: redb::StorageError) -> Self {
     DatabaseStorage {}.into_error(source)
   }
 }
 
+#[cfg(feature = "redb")]
 impl From<redb::TableError> for Error {
   fn from(source: redb::TableError) -> Self {
     DatabaseTableOpen {}.into_error(source)
   }
 }
 
+#[cfg(feature = "redb")]
 impl From<redb::TransactionError> for Error {
   fn from(source: redb::TransactionError) -> Self {
     DatabaseTransaction {}.into_error(source)
   }
 }
 
+#[cfg(feature = "fs")]
 impl From<walkdir::Error> for Error {
   fn from(source: walkdir::Error) -> Self {
     WalkDir {}.into_error(source)

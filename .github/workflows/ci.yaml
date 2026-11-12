@@ -78,6 +78,36 @@ jobs:
     - name: Build Book
       run: mdbook build book
 
+  features:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v7.0.1
+
+    - name: Install Rust Toolchain
+      run: rustup toolchain install stable --profile minimal --target wasm32-unknown-unknown
+
+    - uses: Swatinem/rust-cache@v2.9.2
+
+    - name: Check Without Default Features
+      run: cargo check --lib --bins --no-default-features
+
+    - name: Check With Only Filesystem Feature
+      run: cargo check --lib --bins --no-default-features --features fs
+
+    - name: Check WASM Without Default Features
+      run: cargo check --lib --bins --no-default-features --target wasm32-unknown-unknown
+
+    - name: Check Library-Only Dependencies
+      run: |
+        ! cargo tree \
+          --edges normal \
+          --format '{p}' \
+          --no-default-features \
+          --package filepack \
+          --prefix none \
+          | grep -E '^(clap|clap_complete|clap_mangen|dirs|indicatif|rust-embed|tempfile|tracing-subscriber|walkdir) '
+
   test:
     strategy:
       matrix:
@@ -98,3 +128,27 @@ jobs:
 
     - name: Test
       run: cargo test --workspace
+
+  wasm:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v7.0.1
+
+    - name: Install Rust Toolchain
+      run: rustup toolchain install stable --profile minimal --component clippy --target wasm32-unknown-unknown
+
+    - uses: Swatinem/rust-cache@v2.9.2
+
+    - name: Install wasm-bindgen Test Runner
+      run: |
+        version=$(cargo pkgid --package wasm-bindgen | sed 's/.*@//')
+        cargo install wasm-bindgen-cli --version "$version" --locked
+
+    - name: Clippy
+      run: cargo clippy --package filepack-wasm --all-targets --target wasm32-unknown-unknown
+
+    - name: Test
+      env:
+        CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER: wasm-bindgen-test-runner
+      run: cargo test --package filepack-wasm --target wasm32-unknown-unknown

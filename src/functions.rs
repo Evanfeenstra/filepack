@@ -3,7 +3,7 @@ use {
   ::image::{DynamicImage, ImageBuffer, Rgb, Rgba},
 };
 
-pub(crate) fn check_case(dir: &Utf8Path, names: &[&'static str]) -> Result {
+pub(crate) fn check_case(dir: &Utf8Path, names: &[&'static str]) -> FilesystemResult {
   for entry in fs::read_dir(dir).context(filesystem_error::Io { path: dir })? {
     let actual = entry
       .context(filesystem_error::Io { path: dir })?
@@ -12,7 +12,7 @@ pub(crate) fn check_case(dir: &Utf8Path, names: &[&'static str]) -> Result {
     for &expected in names {
       ensure! {
         !actual.as_encoded_bytes().eq_ignore_ascii_case(expected.as_bytes()) || actual == expected,
-        error::FilenameCase {
+        filesystem_error::FilenameCase {
           actual: actual.to_str().unwrap(),
           expected,
         }
@@ -23,6 +23,7 @@ pub(crate) fn check_case(dir: &Utf8Path, names: &[&'static str]) -> Result {
   Ok(())
 }
 
+#[cfg(feature = "fs")]
 pub(crate) fn check_metadata(root: &Utf8Path, package: &DirectoryTree) -> Result {
   for path in package.files().into_keys() {
     if path.filename() != Metadata::DECO_FILENAME {
@@ -82,6 +83,7 @@ pub fn gradient_alpha(width: u32, height: u32, alpha: u8) -> DynamicImage {
   .into()
 }
 
+#[cfg(any(feature = "client", feature = "server"))]
 pub fn install_default_crypto_provider() -> Result {
   static INSTALLED: LazyLock<bool> = LazyLock::new(|| {
     rustls::crypto::ring::default_provider()
@@ -94,8 +96,23 @@ pub fn install_default_crypto_provider() -> Result {
   Ok(())
 }
 
-pub(crate) fn now() -> Result<u64, SystemTimeError> {
+/// Seconds since the Unix epoch. On wasm32-unknown-unknown, where
+/// `SystemTime::now` panics, the clock is read through JavaScript.
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+pub fn now() -> Result<u64, SystemTimeError> {
   Ok(SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs())
+}
+
+/// Seconds since the Unix epoch. On wasm32-unknown-unknown, where
+/// `SystemTime::now` panics, the clock is read through JavaScript.
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+pub fn now() -> Result<u64, SystemTimeError> {
+  Ok(
+    web_time::SystemTime::now()
+      .duration_since(web_time::UNIX_EPOCH)
+      .expect("system clock is before the unix epoch")
+      .as_secs(),
+  )
 }
 
 pub(crate) fn parse_number<T: FromStr<Err = ParseIntError>>(s: &str) -> Result<T, NumberError> {
@@ -107,6 +124,7 @@ pub(crate) fn parse_number<T: FromStr<Err = ParseIntError>>(s: &str) -> Result<T
   Ok(s.parse()?)
 }
 
+#[cfg(feature = "fs")]
 pub(crate) fn transfer_tempfile(hash: Hash, path: &Utf8Path) -> FilesystemResult<NamedTempFile> {
   tempfile::Builder::new()
     .prefix(&format!("{hash}-"))
@@ -115,6 +133,7 @@ pub(crate) fn transfer_tempfile(hash: Hash, path: &Utf8Path) -> FilesystemResult
     .context(filesystem_error::Io { path })
 }
 
+#[cfg(feature = "fs")]
 pub(crate) fn verify_subpackage(
   root: &Utf8Path,
   path: &RelativePath,

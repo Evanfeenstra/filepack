@@ -59,6 +59,7 @@ impl Metadata {
     }
   }
 
+  #[cfg(feature = "fs")]
   pub(crate) fn load(self, root: &Utf8Path, quiet: bool) -> Result<crate::Metadata> {
     let Self {
       artwork,
@@ -403,7 +404,7 @@ mod tests {
       assert_matches_regex!(
         metadata
           .load(&root, true)
-          .and_then(|metadata| metadata.validate(&root))
+          .and_then(|metadata| Ok(metadata.validate(&root)?))
           .unwrap_err()
           .to_string(),
         expected

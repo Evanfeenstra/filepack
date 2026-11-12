@@ -11,7 +11,7 @@ pub struct PublicKey(ed25519_dalek::VerifyingKey);
 impl PublicKey {
   pub(crate) const LEN: usize = ed25519_dalek::PUBLIC_KEY_LENGTH;
 
-  pub(crate) fn from_bytes(bytes: [u8; Self::LEN]) -> Result<Self, PublicKeyError> {
+  pub fn from_bytes(bytes: [u8; Self::LEN]) -> Result<Self, PublicKeyError> {
     let key =
       ed25519_dalek::VerifyingKey::from_bytes(&bytes).context(public_key_error::Invalid {
         key: InvalidPublicKey(bytes),
@@ -39,14 +39,15 @@ impl PublicKey {
     self.0
   }
 
-  pub(crate) fn load(path: &Utf8Path) -> Result<Self> {
+  #[cfg(feature = "fs")]
+  pub(crate) fn load(path: &Utf8Path) -> Result<Self, KeyError> {
     let public_key = filesystem::read_to_string_opt(path)?
-      .ok_or_else(|| error::PublicKeyNotFound { path }.build())?;
+      .ok_or_else(|| key_error::PublicKeyNotFound { path }.build())?;
 
     let public_key = public_key
       .trim()
       .parse::<Self>()
-      .context(error::PublicKeyLoad { path })?;
+      .context(key_error::PublicKeyLoad { path })?;
 
     Ok(public_key)
   }

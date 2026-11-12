@@ -38,19 +38,35 @@ impl Manifest {
     self.package.files()
   }
 
-  pub(crate) fn from_json(json: &str, path: &Utf8Path) -> Result<Self> {
+  /// Fingerprint of the package the manifest describes.
+  pub fn fingerprint(&self) -> Result<Fingerprint, ManifestError> {
+    Archive::pack(self)
+      .context(manifest_error::Totals)?
+      .fingerprint()
+      .context(manifest_error::Unarchive)
+  }
+
+  /// Decode a manifest from the bytes of a `manifest.filepack` archive.
+  pub fn from_bytes(bytes: &[u8], options: DecodeOptions) -> Result<Self, ManifestError> {
+    Archive::decode_from_slice_with_options(options, bytes)
+      .context(manifest_error::Decode)?
+      .unpack_with_options(options)
+      .context(manifest_error::Unarchive)
+  }
+
+  pub(crate) fn from_json(json: &str, path: &Utf8Path) -> Result<Self, ManifestError> {
     let manifest =
-      serde_json::from_str::<Self>(json).context(error::DeserializeManifest { path })?;
+      serde_json::from_str::<Self>(json).context(manifest_error::DeserializeManifest { path })?;
 
     for name in Archive::root_entries() {
       ensure! {
         !manifest.unknown.entries.contains_key(name),
-        error::UnknownEntryConflict { name: name.to_owned(), path },
+        manifest_error::UnknownEntryConflict { name: name.to_owned(), path },
       }
     }
 
     if let Some(path) = manifest.reserved_filename() {
-      return Err(error::ReservedFilename { path }.build());
+      return Err(manifest_error::ReservedFilename { path }.build());
     }
 
     let files = manifest
@@ -71,7 +87,7 @@ impl Manifest {
 
       ensure! {
         actual == expected,
-        error::EmbeddedFileHashMismatch { actual, expected, path },
+        manifest_error::EmbeddedFileHashMismatch { actual, expected, path },
       }
 
       if !hashes.contains(&expected) {
@@ -81,7 +97,7 @@ impl Manifest {
 
     ensure! {
       unreferenced.is_empty(),
-      error::UnreferencedEmbeddedFiles { hashes: unreferenced, path },
+      manifest_error::UnreferencedEmbeddedFiles { hashes: unreferenced, path },
     }
 
     for file in files {
@@ -90,7 +106,7 @@ impl Manifest {
 
         ensure! {
           actual == file.size,
-          error::EmbeddedFileSizeMismatch {
+          manifest_error::EmbeddedFileSizeMismatch {
             actual,
             expected: file.size,
             hash: file.hash,
@@ -103,16 +119,21 @@ impl Manifest {
     Ok(manifest)
   }
 
-  pub fn load(path: Option<&Utf8Path>) -> Result<Self> {
+  #[cfg(feature = "fs")]
+  pub fn load(path: Option<&Utf8Path>) -> Result<Self, ManifestError> {
     Self::load_with_options(DecodeOptions::default(), path)
   }
 
-  pub fn load_with_options(options: DecodeOptions, path: Option<&Utf8Path>) -> Result<Self> {
+  #[cfg(feature = "fs")]
+  pub fn load_with_options(
+    options: DecodeOptions,
+    path: Option<&Utf8Path>,
+  ) -> Result<Self, ManifestError> {
     Loader::load_with_options(options, path)?.unpack()
   }
 
-  pub(crate) fn pack(&self, path: &Utf8Path) -> Result<Archive> {
-    Archive::pack(self).context(error::ManifestTotals { path })
+  pub(crate) fn pack(&self, path: &Utf8Path) -> Result<Archive, ManifestError> {
+    Archive::pack(self).context(manifest_error::ManifestTotals { path })
   }
 
   pub(crate) fn reserved_filename(&self) -> Option<RelativePath> {
@@ -125,11 +146,13 @@ impl Manifest {
     None
   }
 
-  pub fn save(&self, path: &Utf8Path) -> Result {
+  #[cfg(feature = "fs")]
+  pub fn save(&self, path: &Utf8Path) -> Result<(), ManifestError> {
     filesystem::write(path, self.pack(path)?.encode_to_vec())?;
     Ok(())
   }
 
+  #[cfg(feature = "fs")]
   pub(crate) fn sign(
     &mut self,
     fingerprint: Fingerprint,
@@ -137,24 +160,46 @@ impl Manifest {
     keychain: &Keychain,
     key: &KeyName,
   ) -> Result {
-    let statement = Statement {
-      fingerprint,
-      timestamp: options
-        .timestamp
-        .then(now)
-        .transpose()
-        .context(error::Time)?,
-    };
+    let timestamp = options
+      .timestamp
+      .then(now)
+      .transpose()
+      .context(error::Time)?;
 
-    let signature = keychain.sign(key, statement)?;
+    let private_key = keychain.private_key(key)?;
 
-    self.signatures.insert(Decoded::Known(signature));
+    self.sign_with(&private_key, fingerprint, timestamp);
 
     Ok(())
   }
 
+  /// Sign `fingerprint` with `private_key` and add the signature, with an
+  /// optional `timestamp` in seconds since the Unix epoch.
+  pub fn sign_with(
+    &mut self,
+    private_key: &PrivateKey,
+    fingerprint: Fingerprint,
+    timestamp: Option<u64>,
+  ) {
+    let signature = private_key.sign(Statement {
+      fingerprint,
+      timestamp,
+    });
+
+    self.signatures.insert(Decoded::Known(signature));
+  }
+
   pub(crate) fn signatures(&self) -> impl Iterator<Item = &Attestation> {
     self.signatures.iter().filter_map(Decoded::known)
+  }
+
+  /// Encode the manifest as the bytes of a `manifest.filepack` archive.
+  pub fn to_bytes(&self) -> Result<Vec<u8>, ManifestError> {
+    Ok(
+      Archive::pack(self)
+        .context(manifest_error::Totals)?
+        .encode_to_vec(),
+    )
   }
 
   pub(crate) fn unknown_signatures(&self) -> usize {
@@ -163,6 +208,21 @@ impl Manifest {
       .iter()
       .filter(|signature| signature.known().is_none())
       .count()
+  }
+
+  /// Verify every recognized signature against `fingerprint`, returning the
+  /// public keys that signed it.
+  pub fn verify_signatures(
+    &self,
+    fingerprint: Fingerprint,
+  ) -> Result<Vec<PublicKey>, StatementError> {
+    self
+      .signatures()
+      .map(|signature| {
+        signature.verify(fingerprint)?;
+        Ok(signature.public_key())
+      })
+      .collect()
   }
 
   #[cfg(test)]
@@ -179,6 +239,31 @@ impl Manifest {
 #[cfg(test)]
 mod tests {
   use {super::*, regex::Regex};
+
+  #[test]
+  fn bytes_round_trip() {
+    let mut package = DirectoryTree::new();
+    package
+      .create_file(
+        &"foo".parse().unwrap(),
+        File {
+          hash: Hash::bytes(b"foo"),
+          size: 3,
+        },
+      )
+      .unwrap();
+    let manifest = Manifest::with_package(package);
+    let bytes = manifest.to_bytes().unwrap();
+    let decoded = Manifest::from_bytes(&bytes, DecodeOptions::default()).unwrap();
+    assert_eq!(decoded, manifest);
+    assert_eq!(
+      decoded.fingerprint().unwrap(),
+      Archive::decode_from_slice_with_options(DecodeOptions::default(), &bytes)
+        .unwrap()
+        .fingerprint()
+        .unwrap(),
+    );
+  }
 
   #[test]
   fn duplicate_signatures_are_rejected() {
@@ -225,6 +310,14 @@ mod tests {
   }
 
   #[test]
+  fn from_bytes_rejects_garbage() {
+    assert_matches!(
+      Manifest::from_bytes(b"garbage", DecodeOptions::default()),
+      Err(ManifestError::Decode { .. }),
+    );
+  }
+
+  #[test]
   fn manifests_in_readme_are_valid() {
     let readme = filesystem::read_to_string("README.md").unwrap();
 
@@ -260,12 +353,41 @@ mod tests {
   }
 
   #[test]
+  fn sign_with() {
+    let private_key = DisplayPrivateKey::EXAMPLE.parse::<PrivateKey>().unwrap();
+    let fingerprint = Fingerprint::EXAMPLE.parse::<Fingerprint>().unwrap();
+    let mut manifest = Manifest::with_package(DirectoryTree::new());
+    manifest.sign_with(&private_key, fingerprint, Some(0));
+    assert_eq!(
+      manifest.verify_signatures(fingerprint).unwrap(),
+      vec![private_key.public_key()],
+    );
+  }
+
+  #[test]
   fn unknown_fields_are_rejected() {
     assert!(
       serde_json::from_str::<Manifest>(r#"{"hello": []}"#)
         .unwrap_err()
         .to_string()
         .starts_with("unknown field `hello`")
+    );
+  }
+  #[test]
+  fn verify_signatures() {
+    let attestation = Attestation::EXAMPLE.parse::<Attestation>().unwrap();
+    let fingerprint = Fingerprint::EXAMPLE.parse::<Fingerprint>().unwrap();
+    let mut manifest = Manifest::with_package(DirectoryTree::new());
+    manifest
+      .signatures
+      .insert(Decoded::Known(Attestation::EXAMPLE.parse().unwrap()));
+    assert_eq!(
+      manifest.verify_signatures(fingerprint).unwrap(),
+      vec![attestation.public_key()],
+    );
+    assert_matches!(
+      manifest.verify_signatures(Fingerprint::from_bytes(default())),
+      Err(StatementError::SignatureFingerprintMismatch { .. }),
     );
   }
 }

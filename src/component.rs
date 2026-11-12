@@ -5,7 +5,8 @@ use super::*;
 pub struct Component(str);
 
 impl Component {
-  const RESERVED: &'static [&'static str] = &[Manifest::FILENAME, State::DIR];
+  const RESERVED: &'static [&'static str] = &[Manifest::FILENAME, Self::STATE_DIR];
+  pub(crate) const STATE_DIR: &'static str = ".filepack";
 
   pub(crate) fn as_str(&self) -> &str {
     &self.0
@@ -35,13 +36,7 @@ impl Component {
       }
     }
 
-    if component.eq_ignore_ascii_case(Metadata::DECO_FILENAME)
-      && component != Metadata::DECO_FILENAME
-    {
-      return true;
-    }
-
-    false
+    component.eq_ignore_ascii_case(Metadata::DECO_FILENAME) && component != Metadata::DECO_FILENAME
   }
 
   pub(crate) fn new(s: &str) -> Result<&Component, ComponentError> {
